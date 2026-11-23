@@ -1,0 +1,63 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: bloodlink-postgres
+    restart: unless-stopped
+    command: ["postgres", "-c", "max_connections=200"]
+    environment:
+      POSTGRES_USER: ${DB_USER:-bloodlink}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-bloodlink_secret_2026}
+      POSTGRES_DB: ${DB_NAME:-bloodlink_db}
+      TZ: America/Lima
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - bloodlink_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-bloodlink} -d ${DB_NAME:-bloodlink_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - bloodlink-net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: bloodlink-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: ${PORT:-8080}
+      GIN_MODE: ${GIN_MODE:-release}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-bloodlink}
+      DB_PASSWORD: ${DB_PASSWORD:-bloodlink_secret_2026}
+      DB_NAME: ${DB_NAME:-bloodlink_db}
+      DB_SSLMODE: disable
+      JWT_SECRET: ${JWT_SECRET:-bloodlink_minsa_jwt_secret_key_2026_peru_red_nacional}
+      JWT_EXPIRATION_HOURS: ${JWT_EXPIRATION_HOURS:-8}
+      AES_KEY_HEX: ${AES_KEY_HEX:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:4200,http://localhost:8080}
+      SOAP_ENDPOINT_URL: ${SOAP_ENDPOINT_URL:-http://localhost:8080/soap/v1/interoperabilidad}
+      TZ: America/Lima
+    ports:
+      - "${PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bloodlink-net
+
+volumes:
+  bloodlink_pgdata:
+
+networks:
+  bloodlink-net:
+    driver: bridge
