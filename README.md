@@ -55,11 +55,28 @@ cd backend
 go test -v -cover ./...
 ```
 
-### 3.2. Levantar Plataforma con Docker Compose (PostgreSQL 15 + Backend Go)
+### 3.2. Levantar Plataforma Full-Stack con Docker Compose (PostgreSQL 15 + Backend Go + Frontend Angular/Nginx)
 ```powershell
 cd ..
 docker compose up -d --build
 docker compose ps
+```
+
+Accesos principales una vez levantados los 3 contenedores (`bloodlink-postgres`, `bloodlink-backend`, `bloodlink-frontend`):
+- **Aplicación Web Frontend (Angular + Nginx Reverse Proxy):** `http://localhost:4200`
+  - `/` — Inicio (`IUPrincipal`)
+  - `/login` — Acceso Institucional RBAC (`RF-11`)
+  - `/donantes/registro` — Portal Público de Donantes en 2 pasos (`CUN-002` / `CP-03` / `CP-05`)
+  - `/interoperabilidad` — Visor Técnico SOA / Directorio UDDI / Contrato WSDL
+  - `/emergencias`, `/emergencias/nueva`, `/emergencias/:solicitudId` — Motor de Matching (`CP-01` / `CP-02`)
+  - `/inventario`, `/inventario/nueva` — Gestión de Stock y Semáforo `RF-08` (`CUN-003`)
+  - `/dashboard`, `/trazabilidad`, `/donantes`, `/notificaciones` — Panel Coordinador y Auditoría PDF/CSV (`RF-10` / `RF-13`)
+- **API Backend Directa:** `http://localhost:8080/api/v1` y `http://localhost:8080/soap/v1/interoperabilidad?wsdl`
+
+Para desarrollo local de Angular con recarga en caliente y proxy hacia `:8080`:
+```powershell
+cd frontend
+npx ng serve --proxy-config proxy.conf.json
 ```
 
 Verificar estado de salud (`/health`), contrato WSDL y directorio UDDI:
