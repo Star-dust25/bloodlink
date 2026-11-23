@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { RolUsuario } from '../../core/models/auth.model';
 import { AuthService } from '../../core/services/auth.service';
-import { formatRol } from '../../core/utils/label.util';
+import { formatHospital, formatRol } from '../../core/utils/label.util';
 
 interface NavItem {
   label: string;
@@ -71,19 +71,7 @@ const WORKSPACE_NAV_ITEMS: readonly NavItem[] = [
     <div class="workspace-shell">
       <aside class="sidebar no-print" [class.open]="mobileMenuOpen()">
         <div class="sidebar-top">
-          <a routerLink="/" class="sidebar-brand">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-              <rect width="32" height="32" rx="12" fill="#3AA1B3" />
-              <path
-                d="M16 7.5C16 7.5 10.5 13.7 10.5 17.8C10.5 20.9 12.96 23.5 16 23.5C19.04 23.5 21.5 20.9 21.5 17.8C21.5 13.7 16 7.5 16 7.5Z"
-                fill="#F7CC51"
-              />
-            </svg>
-            <div>
-              <div class="brand-title">BloodLink</div>
-              <div class="brand-sub">Red de Salud</div>
-            </div>
-          </a>
+          <a routerLink="/" class="sidebar-brand">BloodLink</a>
           <button
             type="button"
             class="mobile-toggle"
@@ -117,7 +105,8 @@ const WORKSPACE_NAV_ITEMS: readonly NavItem[] = [
         @if (auth.currentUser(); as user) {
           <div class="sidebar-user">
             <div class="user-name">{{ user.nombreCompleto }}</div>
-            <div class="user-role">{{ formatRolLabel(user.rol) }} · {{ user.hospitalId }}</div>
+            <div class="user-role">{{ formatRolLabel(user.rol) }}</div>
+            <div class="user-hospital">{{ formatHospitalLabel(user.hospitalId) }}</div>
             <button type="button" class="logout-btn" (click)="auth.logout()">
               Cerrar sesión
             </button>
@@ -158,20 +147,12 @@ const WORKSPACE_NAV_ITEMS: readonly NavItem[] = [
       padding: 0 0.35rem;
     }
     .sidebar-brand {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      color: var(--text-on-ink);
-    }
-    .brand-title {
-      font-size: 1.15rem;
+      display: inline-block;
+      font-size: 1.45rem;
       font-weight: 900;
+      letter-spacing: -0.02em;
       line-height: 1.1;
-    }
-    .brand-sub {
-      font-size: 0.72rem;
-      font-weight: 700;
-      color: #5FB2DA;
+      color: var(--text-on-ink);
     }
     .mobile-toggle {
       display: none;
@@ -234,14 +215,19 @@ const WORKSPACE_NAV_ITEMS: readonly NavItem[] = [
       gap: 0.25rem;
     }
     .user-name {
-      font-size: 0.9rem;
+      font-size: 0.92rem;
       font-weight: 800;
       color: #FFFFFF;
     }
     .user-role {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--brand-yellow);
+    }
+    .user-hospital {
       font-size: 0.78rem;
       font-weight: 600;
-      color: #5FB2DA;
+      color: rgba(250, 248, 242, 0.78);
     }
     .logout-btn {
       margin-top: 0.65rem;
@@ -282,6 +268,7 @@ export class WorkspaceLayoutComponent {
   protected readonly auth = inject(AuthService);
   protected readonly mobileMenuOpen = signal(false);
   protected readonly formatRolLabel = formatRol;
+  protected readonly formatHospitalLabel = formatHospital;
 
   protected readonly visibleNavItems = computed(() => {
     const rol = this.auth.currentRole();

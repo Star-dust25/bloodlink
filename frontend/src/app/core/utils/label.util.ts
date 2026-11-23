@@ -1,3 +1,33 @@
+import { BANCOS_PIURA_CATALOGO } from '../config/api.config';
+
+const HOSPITAL_NOMBRES_CORTOS: Record<string, string> = {
+  'HOSP-MINSA-01': 'Hospital Santa Rosa',
+  'HOSP-ESSALUD-04': 'Hospital Cayetano Heredia',
+  'HOSP-MINSA-02': 'Hospital de Apoyo Sullana',
+  'CLIN-PRIV-01': 'Clínica Miraflores',
+};
+
+export function formatHospital(hospitalId?: string | null): string {
+  if (!hospitalId) return 'Hospital de la red';
+  const corto = HOSPITAL_NOMBRES_CORTOS[hospitalId];
+  if (corto) return corto;
+  const catalogo = BANCOS_PIURA_CATALOGO.find((b) => b.id === hospitalId);
+  return catalogo ? catalogo.nombre : hospitalId;
+}
+
+export function formatFechaCorta(iso?: string | null): string {
+  if (!iso) return 'Reciente';
+  const fecha = new Date(iso);
+  if (Number.isNaN(fecha.getTime())) return 'Reciente';
+  return new Intl.DateTimeFormat('es-PE', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(fecha);
+}
+
 export function formatRol(rol?: string | null): string {
   switch (rol) {
     case 'MEDICO':

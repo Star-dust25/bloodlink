@@ -1,182 +1,291 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
-import { ExtractedError, extractApiError } from '../../core/utils/error.util';
-import { formatRol } from '../../core/utils/label.util';
-import { InlineAlertComponent } from '../../shared/ui/inline-alert/inline-alert.component';
+import { extractApiError } from '../../core/utils/error.util';
 
 interface DemoAccount {
-  label: string;
-  rol: string;
+  rolHumano: string;
   email: string;
   password: string;
 }
 
 const DEMO_ACCOUNTS: readonly DemoAccount[] = [
   {
-    label: 'Dr. Carlos Mendoza',
-    rol: 'MEDICO',
+    rolHumano: 'Médico',
     email: 'medico@bloodlink.gob.pe',
     password: 'Medico123!',
   },
   {
-    label: 'Lic. María Torres',
-    rol: 'PERSONAL_BANCO',
+    rolHumano: 'Personal de Banco',
     email: 'banco@bloodlink.gob.pe',
     password: 'Banco123!',
   },
   {
-    label: 'Mg. Roberto Paredes',
-    rol: 'COORDINADOR',
+    rolHumano: 'Coordinador',
     email: 'coordinador@bloodlink.gob.pe',
     password: 'Coord123!',
   },
-];
+] as const;
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [FormsModule, InlineAlertComponent],
+  imports: [FormsModule, RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    '(document:click)': 'cerrarTooltip()',
+    '(document:keydown.escape)': 'cerrarTooltip()',
+  },
   template: `
-    <div class="login-wrapper">
-      <section class="login-card surface-card">
+    <div class="login-page">
+      <header class="login-topbar">
+        <a routerLink="/" class="login-brand">
+          <span class="brand-dot" aria-hidden="true"></span>
+          <span>BloodLink</span>
+        </a>
+        <a routerLink="/" class="back-link">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M15 18L9 12L15 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <span>Volver</span>
+        </a>
+      </header>
+
+      <main class="login-card">
         <div class="login-header">
-          <span class="eyebrow">PORTAL DE SALUD</span>
-          <h1 class="login-title">Bienvenido de nuevo</h1>
-          <p class="login-subtitle">
-            Ingresa con tu correo institucional para acceder a tu panel de trabajo.
-          </p>
+          <h1 class="login-title">Iniciar sesión</h1>
+          <p class="login-sub">Acceso para personal de salud.</p>
         </div>
 
-        @if (apiError(); as err) {
-          <app-inline-alert
-            variant="error"
-            [title]="err.status === 423 ? 'Cuenta bloqueada temporalmente (15 minutos)' : err.mensaje"
-            [message]="err.detalle || (err.status === 423 ? 'Se superó el límite de 3 intentos fallidos consecutivos.' : '')"
-          />
-        }
-
-        <form class="form-stack" (ngSubmit)="onSubmit()">
+        <form class="form-stack" novalidate (ngSubmit)="onSubmit()">
           <div class="field">
-            <label class="field-label" for="email">Correo institucional</label>
+            <div class="label-with-tip">
+              <label class="field-label" for="emailInput">Correo electrónico</label>
+
+              <div class="tip-anchor" [class.open]="tooltipCuentasAbierto()" (click)="$event.stopPropagation()">
+                <button
+                  type="button"
+                  class="tip-btn"
+                  aria-label="Ver cuentas de prueba"
+                  [attr.aria-expanded]="tooltipCuentasAbierto()"
+                  (click)="toggleTooltipCuentas($event)"
+                >
+                  ?
+                </button>
+
+                <div class="tip-popover tip-popover-wide" role="tooltip">
+                  <div class="tip-head">Cuentas de prueba</div>
+                  @for (acc of demoAccounts; track acc.email) {
+                    <button
+                      type="button"
+                      class="tip-option"
+                      (click)="seleccionarCuentaPrueba(acc)"
+                    >
+                      <strong>{{ acc.rolHumano }}</strong> · {{ acc.email }}
+                    </button>
+                  }
+                </div>
+              </div>
+            </div>
+
             <input
-              id="email"
+              id="emailInput"
               name="email"
               type="email"
-              class="input"
+              autocomplete="email"
+              class="input login-input"
+              [class.input-error]="!!errorEmail()"
+              placeholder="nombre@bloodlink.gob.pe"
               required
-              autocomplete="username"
-              placeholder="usuario@bloodlink.gob.pe"
-              [(ngModel)]="email"
+              [ngModel]="email"
+              (ngModelChange)="onEmailChange($event)"
             />
+            @if (errorEmail(); as errMail) {
+              <p class="field-error" role="alert">{{ errMail }}</p>
+            }
           </div>
 
           <div class="field">
-            <label class="field-label" for="password">Contraseña</label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              class="input"
-              required
-              autocomplete="current-password"
-              placeholder="••••••••••"
-              [(ngModel)]="password"
-            />
+            <label class="field-label" for="passwordInput">Contraseña</label>
+            <div class="password-wrap">
+              <input
+                id="passwordInput"
+                name="password"
+                [type]="mostrarPassword() ? 'text' : 'password'"
+                autocomplete="current-password"
+                class="input login-input password-input"
+                [class.input-error]="!!errorPassword()"
+                placeholder="••••••••••"
+                required
+                [ngModel]="password"
+                (ngModelChange)="onPasswordChange($event)"
+              />
+              <button
+                type="button"
+                class="pwd-toggle"
+                [attr.aria-label]="mostrarPassword() ? 'Ocultar contraseña' : 'Mostrar contraseña'"
+                [attr.aria-pressed]="mostrarPassword()"
+                (click)="toggleMostrarPassword()"
+              >
+                @if (mostrarPassword()) {
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M3 3L21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    <path d="M10.58 10.58A2 2 0 0 0 13.42 13.42" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    <path d="M9.88 5.09A10.94 10.94 0 0 1 12 4.9C17 4.9 20.73 8.11 22 12C21.55 13.38 20.82 14.62 19.87 15.65M6.61 6.61C4.62 7.96 3.06 9.81 2 12C3.27 15.89 7 19.1 12 19.1C13.91 19.1 15.68 18.63 17.2 17.8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                } @else {
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M2 12C3.27 8.11 7 4.9 12 4.9C17 4.9 20.73 8.11 22 12C20.73 15.89 17 19.1 12 19.1C7 19.1 3.27 15.89 2 12Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+                    <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2" />
+                  </svg>
+                }
+              </button>
+            </div>
+            @if (errorPassword(); as errPwd) {
+              <p class="field-error" role="alert">{{ errPwd }}</p>
+            }
           </div>
+
+          @if (serverError(); as srvErr) {
+            <p class="field-error" role="alert">{{ srvErr }}</p>
+          }
 
           <button
             type="submit"
-            class="btn btn-primary btn-full"
-            [disabled]="loading() || !email.trim() || !password"
+            class="btn btn-primary btn-full login-submit"
+            [disabled]="loading()"
           >
-            {{ loading() ? 'Verificando tus datos...' : 'Ingresar a mi panel' }}
+            {{ loading() ? 'Ingresando...' : 'Ingresar' }}
           </button>
         </form>
-
-        <details class="demo-details">
-          <summary class="demo-summary">Cuentas de prueba rápida</summary>
-          <div class="demo-list">
-            @for (acc of demoAccounts; track acc.email) {
-              <button
-                type="button"
-                class="demo-item"
-                (click)="fillDemoAccount(acc)"
-              >
-                <div>
-                  <div class="demo-role">{{ formatRolLabel(acc.rol) }}</div>
-                  <div class="demo-name">{{ acc.label }}</div>
-                </div>
-                <span class="demo-action">Usar</span>
-              </button>
-            }
-          </div>
-        </details>
-      </section>
+      </main>
     </div>
   `,
   styles: [`
-    .login-wrapper {
+    .login-page {
+      min-height: 100dvh;
+      background-color: var(--bg-canvas);
+      padding: 2rem 1.25rem;
       display: flex;
+      flex-direction: column;
+      align-items: center;
       justify-content: center;
-      padding: 1.5rem 0;
+      gap: 1rem;
+    }
+    .login-topbar {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 0.25rem;
+    }
+    .login-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 1.2rem;
+      font-weight: 900;
+    }
+    .brand-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--brand-turquoise) 50%, var(--brand-yellow) 50%);
+    }
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.94rem;
+      font-weight: 800;
+      color: var(--brand-turquoise-dark);
     }
     .login-card {
       width: 100%;
-      max-width: 470px;
-      padding: 2.5rem;
-      border-top: 5px solid var(--brand-turquoise);
+      max-width: 480px;
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 32px;
+      padding: 2.25rem;
+      box-shadow: var(--shadow-soft);
       display: flex;
       flex-direction: column;
-      gap: 1.5rem;
+      gap: 1.4rem;
     }
     .login-header {
       display: flex;
       flex-direction: column;
-      gap: 0.4rem;
+      gap: 0.35rem;
     }
-    .login-title { font-size: 1.85rem; font-weight: 900; }
-    .login-subtitle { font-size: 0.94rem; color: var(--text-secondary); }
-    .btn-full { width: 100%; margin-top: 0.25rem; }
-    .demo-details {
-      padding-top: 1.25rem;
-      border-top: 1px solid var(--border-subtle);
+    .login-title {
+      font-size: 1.85rem;
+      font-weight: 900;
+      color: var(--brand-ink);
     }
-    .demo-summary {
-      font-size: 0.84rem;
-      font-weight: 800;
-      color: var(--brand-turquoise-dark);
-      cursor: pointer;
-      user-select: none;
+    .login-sub {
+      font-size: 0.98rem;
+      color: var(--text-secondary);
     }
-    .demo-list {
-      margin-top: 0.85rem;
-      display: flex;
-      flex-direction: column;
-      gap: 0.55rem;
-    }
-    .demo-item {
-      width: 100%;
+    .label-with-tip {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      padding: 0.75rem 1rem;
-      background-color: var(--bg-surface-muted);
-      border: 1.5px solid var(--border-subtle);
-      border-radius: var(--radius-input);
+      justify-content: flex-start;
+      gap: 0.5rem;
+    }
+    .tip-popover-wide {
+      width: max-content;
+      max-width: min(350px, calc(100vw - 3.5rem));
+    }
+    .login-input {
+      min-height: 54px;
+    }
+    .password-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .password-input {
+      padding-right: 3rem;
+    }
+    .pwd-toggle {
+      position: absolute;
+      right: 0.75rem;
+      width: 36px;
+      height: 36px;
+      border: none;
+      border-radius: 50%;
+      background: transparent;
+      color: var(--text-secondary);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       cursor: pointer;
-      text-align: left;
-      transition: all var(--transition-fast);
+      transition: background-color 180ms ease, color 180ms ease;
     }
-    .demo-item:hover {
-      border-color: var(--brand-turquoise);
-      background-color: var(--brand-turquoise-soft);
+    .pwd-toggle:hover {
+      background-color: var(--bg-surface-muted);
+      color: var(--brand-ink);
     }
-    .demo-role { font-size: 0.78rem; font-weight: 800; color: var(--brand-turquoise-dark); }
-    .demo-name { font-size: 0.9rem; font-weight: 700; color: var(--text-primary); }
-    .demo-action { font-size: 0.84rem; font-weight: 800; color: var(--brand-ink); }
+    .pwd-toggle:focus-visible {
+      outline: 2px solid var(--brand-turquoise);
+      outline-offset: 2px;
+    }
+    .btn-full {
+      width: 100%;
+    }
+    .login-submit {
+      min-height: 54px;
+      font-weight: 800;
+    }
+    @media (max-width: 520px) {
+      .login-card {
+        padding: 1.5rem;
+      }
+    }
   `],
 })
 export class LoginComponent {
@@ -184,35 +293,92 @@ export class LoginComponent {
   private readonly router = inject(Router);
 
   protected readonly demoAccounts = DEMO_ACCOUNTS;
-  protected readonly formatRolLabel = formatRol;
+  protected readonly loading = signal(false);
+  protected readonly tooltipCuentasAbierto = signal(false);
+  protected readonly mostrarPassword = signal(false);
+  protected readonly errorEmail = signal('');
+  protected readonly errorPassword = signal('');
+  protected readonly serverError = signal('');
+
   protected email = '';
   protected password = '';
-  protected readonly loading = signal(false);
-  protected readonly apiError = signal<ExtractedError | null>(null);
 
-  fillDemoAccount(acc: DemoAccount): void {
+  toggleTooltipCuentas(event: Event): void {
+    event.stopPropagation();
+    this.tooltipCuentasAbierto.update((v) => !v);
+  }
+
+  cerrarTooltip(): void {
+    if (this.tooltipCuentasAbierto()) {
+      this.tooltipCuentasAbierto.set(false);
+    }
+  }
+
+  seleccionarCuentaPrueba(acc: DemoAccount): void {
     this.email = acc.email;
     this.password = acc.password;
-    this.apiError.set(null);
+    this.errorEmail.set('');
+    this.errorPassword.set('');
+    this.serverError.set('');
+    this.tooltipCuentasAbierto.set(false);
+  }
+
+  toggleMostrarPassword(): void {
+    this.mostrarPassword.update((v) => !v);
+  }
+
+  onEmailChange(value: string): void {
+    this.email = value ?? '';
+    if (this.errorEmail()) this.errorEmail.set('');
+    if (this.serverError()) this.serverError.set('');
+  }
+
+  onPasswordChange(value: string): void {
+    this.password = value ?? '';
+    if (this.errorPassword()) this.errorPassword.set('');
+    if (this.serverError()) this.serverError.set('');
   }
 
   onSubmit(): void {
-    if (!this.email.trim() || !this.password) return;
-    this.loading.set(true);
-    this.apiError.set(null);
+    this.cerrarTooltip();
 
-    this.authService
-      .login({ email: this.email.trim(), password: this.password })
-      .subscribe({
-        next: (resp) => {
-          this.loading.set(false);
-          const target = this.authService.defaultRouteForRole(resp.usuario.rol);
-          void this.router.navigate([target]);
-        },
-        error: (err) => {
-          this.loading.set(false);
-          this.apiError.set(extractApiError(err));
-        },
-      });
+    const cleanEmail = this.email.trim();
+    const emailValid = EMAIL_REGEX.test(cleanEmail);
+    const passwordValid = this.password.length > 0;
+
+    this.errorEmail.set(emailValid ? '' : 'Ingresa un correo electrónico válido.');
+    this.errorPassword.set(passwordValid ? '' : 'Ingresa tu contraseña.');
+
+    if (!emailValid || !passwordValid) {
+      return;
+    }
+
+    this.loading.set(true);
+    this.serverError.set('');
+
+    this.authService.login({ email: cleanEmail, password: this.password }).subscribe({
+      next: (resp) => {
+        this.loading.set(false);
+        const target = this.authService.defaultRouteForRole(resp.usuario.rol);
+        void this.router.navigate([target]);
+      },
+      error: (err) => {
+        this.loading.set(false);
+        const parsed = extractApiError(err);
+        if (parsed.status === 401) {
+          this.serverError.set('Correo o contraseña incorrectos.');
+          return;
+        }
+        if (parsed.status === 423) {
+          this.serverError.set(
+            'Cuenta bloqueada temporalmente por intentos fallidos. Intenta nuevamente en 15 minutos.'
+          );
+          return;
+        }
+        const raw = (parsed.mensaje || 'No pudimos iniciar sesión. Verifica tus datos.').trim();
+        const cap = raw.charAt(0).toUpperCase() + raw.slice(1);
+        this.serverError.set(/[.!?]$/.test(cap) ? cap : `${cap}.`);
+      },
+    });
   }
 }

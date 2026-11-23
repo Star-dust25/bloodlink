@@ -1,155 +1,318 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { EmergenciaMatchingResponseDTO, EstadoSolicitud } from '../../core/models/emergencia.model';
 import { AuthService } from '../../core/services/auth.service';
 import { EmergenciasService } from '../../core/services/emergencias.service';
 import { ExtractedError, extractApiError } from '../../core/utils/error.util';
-import { formatEstadoSolicitud, formatOrigenAsignacion } from '../../core/utils/label.util';
+import {
+  formatEstadoSolicitud,
+  formatFechaCorta,
+  formatHospital,
+  formatOrigenAsignacion,
+  formatUrgencia,
+} from '../../core/utils/label.util';
 import { EmptyStateComponent } from '../../shared/ui/empty-state/empty-state.component';
-import { InlineAlertComponent } from '../../shared/ui/inline-alert/inline-alert.component';
 import { PageHeaderComponent } from '../../shared/ui/page-header/page-header.component';
 import { IndicatorTone, StatusIndicatorComponent } from '../../shared/ui/status-indicator/status-indicator.component';
+
+interface FiltroEstadoOption {
+  label: string;
+  value: string;
+}
+
+const FILTROS_ESTADO: readonly FiltroEstadoOption[] = [
+  { label: 'Todas', value: '' },
+  { label: 'Reservadas', value: 'Reservada' },
+  { label: 'Buscando donantes', value: 'En Espera de Donantes' },
+  { label: 'Atendidas', value: 'Atendida' },
+  { label: 'Canceladas', value: 'Cancelada' },
+] as const;
+
+const SKELETON_ROWS = [1, 2, 3, 4, 5] as const;
 
 @Component({
   selector: 'app-emergencias-list',
   standalone: true,
   imports: [
-    FormsModule,
     RouterLink,
     PageHeaderComponent,
-    InlineAlertComponent,
     StatusIndicatorComponent,
     EmptyStateComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <app-page-header
-      eyebrow="ATENCIÓN DE EMERGENCIAS"
-      title="Solicitudes de emergencia"
-      subtitle="Seguimiento en tiempo real de unidades reservadas, traslados desde bancos cercanos y tiempos de respuesta."
-    >
+    <app-page-header title="Emergencias">
       @if (esMedico()) {
         <a routerLink="/emergencias/nueva" class="btn btn-primary">
-          Pedir unidades
+          Nueva solicitud
         </a>
       }
     </app-page-header>
 
-    <div class="filter-bar">
-      <div class="field">
-        <label class="field-label" for="estadoFiltro">Filtrar por estado</label>
-        <select
-          id="estadoFiltro"
-          class="select"
-          [(ngModel)]="estadoFiltro"
-          (ngModelChange)="cargarSolicitudes()"
+    <div class="emerg-controls">
+      <div class="pill-tablist" role="tablist" aria-label="Filtrar solicitudes por estado">
+        @for (opt of filtrosEstado; track opt.value) {
+          <button
+            type="button"
+            role="tab"
+            class="filter-pill"
+            [class.active]="estadoFiltro() === opt.value"
+            [attr.aria-selected]="estadoFiltro() === opt.value"
+            (click)="seleccionarFiltro(opt.value)"
+          >
+            {{ opt.label }}
+          </button>
+        }
+      </div>
+
+      <button
+        type="button"
+        class="btn-refresh"
+        [disabled]="loading()"
+        (click)="cargarSolicitudes()"
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          aria-hidden="true"
+          [class.spin-icon]="loading()"
         >
-          <option value="">Todos los estados</option>
-          <option value="Reservada">Reservada</option>
-          <option value="Atendida">Atendida</option>
-          <option value="En Espera de Donantes">Buscando donantes</option>
-          <option value="Cancelada">Cancelada</option>
-        </select>
-      </div>
-      <div>
-        <button type="button" class="btn btn-ghost" (click)="cargarSolicitudes()">
-          Actualizar listado
-        </button>
-      </div>
+          <path
+            d="M20 12A8 8 0 1 1 17.66 6.34M20 4V9H15"
+            stroke="currentColor"
+            stroke-width="2.1"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+        <span>{{ loading() ? 'Actualizando...' : 'Actualizar' }}</span>
+      </button>
     </div>
 
     @if (apiError(); as err) {
-      <div style="margin-bottom: 1.5rem;">
-        <app-inline-alert variant="error" [title]="err.mensaje" [message]="err.detalle" />
+      <div class="inline-error-row">
+        <p class="field-error" role="alert">{{ formatErrorText(err) }}</p>
+        <button type="button" class="btn-retry" (click)="cargarSolicitudes()">
+          Reintentar
+        </button>
       </div>
     }
 
-    @if (solicitudes().length === 0 && !loading()) {
+    @if (loading()) {
+      <div class="emerg-card" aria-busy="true" aria-label="Cargando emergencias">
+        <table class="emerg-table" aria-hidden="true">
+          <thead>
+            <tr>
+              <th>Grupo</th>
+              <th>Origen / Asignación</th>
+              <th>Prioridad</th>
+              <th>Estado</th>
+              <th>Fecha</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of skeletonRows; track row) {
+              <tr>
+                <td>
+                  <div class="skel-stack">
+                    <span class="skeleton" style="width: 46px; height: 24px;"></span>
+                    <span class="skeleton" style="width: 36px; height: 14px;"></span>
+                  </div>
+                </td>
+                <td>
+                  <div class="skel-stack">
+                    <span class="skeleton" style="width: 170px; height: 16px;"></span>
+                    <span class="skeleton" style="width: 120px; height: 13px;"></span>
+                  </div>
+                </td>
+                <td>
+                  <span class="skeleton" style="width: 110px; height: 16px;"></span>
+                </td>
+                <td>
+                  <div class="skel-row-inline">
+                    <span class="skeleton" style="width: 10px; height: 10px; flex-shrink: 0;"></span>
+                    <span class="skeleton" style="width: 95px; height: 16px;"></span>
+                  </div>
+                </td>
+                <td>
+                  <span class="skeleton" style="width: 110px; height: 15px;"></span>
+                </td>
+                <td>
+                  <span class="skeleton" style="width: 48px; height: 16px;"></span>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+
+        <div class="emerg-mobile-list" aria-hidden="true">
+          @for (row of skeletonRows; track row) {
+            <div class="emerg-mobile-card">
+              <div class="emerg-mobile-top">
+                <div class="skel-row-inline">
+                  <span class="skeleton" style="width: 46px; height: 24px;"></span>
+                  <span class="skeleton" style="width: 36px; height: 14px;"></span>
+                </div>
+                <div class="skel-row-inline">
+                  <span class="skeleton" style="width: 10px; height: 10px;"></span>
+                  <span class="skeleton" style="width: 95px; height: 16px;"></span>
+                </div>
+              </div>
+              <div class="skel-stack">
+                <span class="skeleton" style="width: 170px; height: 16px;"></span>
+                <span class="skeleton" style="width: 120px; height: 13px;"></span>
+              </div>
+              <div class="emerg-mobile-bottom">
+                <span class="skeleton" style="width: 110px; height: 15px;"></span>
+                <span class="skeleton" style="width: 48px; height: 16px;"></span>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+    } @else if (solicitudes().length === 0) {
       <app-empty-state
-        eyebrow="EMERGENCIAS"
-        title="Aún no hay solicitudes registradas"
-        description="Cuando un médico solicite unidades para una emergencia, aparecerán aquí junto con el banco que las reservó."
+        eyebrow="SIN RESULTADOS"
+        [title]="estadoFiltro() ? 'No hay solicitudes en este estado' : 'Aún no hay solicitudes registradas'"
+        description="Cuando un médico solicite unidades para una emergencia, aparecerán aquí en tiempo real."
       >
-        @if (esMedico()) {
-          <a routerLink="/emergencias/nueva" class="btn btn-primary">Solicitar unidades</a>
+        @if (estadoFiltro()) {
+          <button type="button" class="btn btn-secondary" (click)="seleccionarFiltro('')">
+            Ver todas
+          </button>
+        } @else if (esMedico()) {
+          <a routerLink="/emergencias/nueva" class="btn btn-primary">Nueva solicitud</a>
         }
       </app-empty-state>
     } @else {
-      <div class="table-wrap">
-        <table class="editorial-table tabular">
+      <div class="emerg-card">
+        <table class="emerg-table tabular">
           <thead>
             <tr>
-              <th>Solicitud</th>
-              <th>Grupo y cantidad</th>
-              <th>Hospital solicitante</th>
+              <th>Grupo</th>
+              <th>Origen / Asignación</th>
+              <th>Prioridad</th>
               <th>Estado</th>
-              <th>Banco asignado</th>
-              <th>Tiempo</th>
-              <th>Detalle</th>
+              <th>Fecha</th>
+              <th>Acción</th>
             </tr>
           </thead>
           <tbody>
             @for (sol of solicitudes(); track sol.solicitudId) {
-              <tr>
-                <td class="code-mono">
-                  <strong>{{ sol.solicitudId }}</strong>
+              <tr class="clickable-row" (click)="verDetalle(sol.solicitudId)">
+                <td>
+                  <div class="blood-group-cell">
+                    <span class="blood-main">{{ sol.tipoSangreReq || 'O' }}{{ sol.factorRhReq || '+' }}</span>
+                    <span class="blood-qty">{{ sol.cantidadReq ?? 1 }} u.</span>
+                  </div>
                 </td>
                 <td>
-                  <strong>{{ sol.tipoSangreReq }}{{ sol.factorRhReq }}</strong>
-                  <span> · {{ sol.cantidadReq }} u.</span>
+                  <div class="cell-primary">{{ formatHospitalLabel(sol.hospitalOrigenId) }}</div>
+                  <div class="cell-sub">{{ formatAsignacion(sol) }}</div>
                 </td>
-                <td>{{ sol.hospitalOrigenId }}</td>
+                <td>
+                  <span class="priority-label" [class.priority-vital]="sol.urgencia === 'ALTA_VITAL'">
+                    {{ formatUrgenciaLabel(sol.urgencia) }}
+                  </span>
+                </td>
                 <td>
                   <app-status-indicator
                     [tone]="toneForEstado(sol.estadoSolicitud)"
                     [label]="formatEstado(sol.estadoSolicitud)"
                   />
                 </td>
+                <td class="date-cell">{{ formatFecha(sol.fechaHora) }}</td>
                 <td>
-                  @if (sol.bancoAsignado; as b) {
-                    <div>{{ b.nombre }}</div>
-                    <div class="row-sub">
-                      {{ formatOrigen(sol.origenAsignacion) }} · {{ b.distanciaKm }} km · ~{{ b.tiempoEstimadoMin }} min
-                    </div>
-                  } @else {
-                    <span class="row-sub">{{ formatOrigen(sol.origenAsignacion) }}</span>
-                  }
-                </td>
-                <td>{{ sol.tiempoRespuestaMatchingMs }} ms</td>
-                <td>
-                  <a [routerLink]="['/emergencias', sol.solicitudId]" class="btn btn-ghost btn-sm">
-                    Ver detalle
+                  <a
+                    [routerLink]="['/emergencias', sol.solicitudId]"
+                    class="row-ver-link"
+                    (click)="$event.stopPropagation()"
+                  >
+                    <span>Ver</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
                   </a>
                 </td>
               </tr>
             }
           </tbody>
         </table>
+
+        <div class="emerg-mobile-list tabular">
+          @for (sol of solicitudes(); track sol.solicitudId) {
+            <article class="emerg-mobile-card" (click)="verDetalle(sol.solicitudId)">
+              <div class="emerg-mobile-top">
+                <div class="skel-row-inline">
+                  <span class="blood-main">{{ sol.tipoSangreReq || 'O' }}{{ sol.factorRhReq || '+' }}</span>
+                  <span class="blood-qty">· {{ sol.cantidadReq ?? 1 }} u.</span>
+                </div>
+                <app-status-indicator
+                  [tone]="toneForEstado(sol.estadoSolicitud)"
+                  [label]="formatEstado(sol.estadoSolicitud)"
+                />
+              </div>
+
+              <div>
+                <div class="cell-primary">{{ formatHospitalLabel(sol.hospitalOrigenId) }}</div>
+                <div class="cell-sub">{{ formatAsignacion(sol) }}</div>
+              </div>
+
+              <div class="emerg-mobile-bottom">
+                <span class="priority-label" [class.priority-vital]="sol.urgencia === 'ALTA_VITAL'">
+                  {{ formatUrgenciaLabel(sol.urgencia) }}
+                </span>
+                <span class="date-cell">{{ formatFecha(sol.fechaHora) }}</span>
+              </div>
+
+              <div class="emerg-mobile-bottom">
+                <span></span>
+                <a
+                  [routerLink]="['/emergencias', sol.solicitudId]"
+                  class="row-ver-link"
+                  (click)="$event.stopPropagation()"
+                >
+                  <span>Ver</span>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                </a>
+              </div>
+            </article>
+          }
+        </div>
       </div>
     }
   `,
-  styles: [`
-    .row-sub {
-      font-size: 0.8rem;
-      font-weight: 500;
-      color: var(--text-muted);
-    }
-  `],
 })
 export class EmergenciasListComponent implements OnInit {
   private readonly emergenciasService = inject(EmergenciasService);
   private readonly authService = inject(AuthService);
+  private readonly router = inject(Router);
 
+  protected readonly filtrosEstado = FILTROS_ESTADO;
+  protected readonly skeletonRows = SKELETON_ROWS;
   protected readonly solicitudes = signal<EmergenciaMatchingResponseDTO[]>([]);
   protected readonly loading = signal(false);
   protected readonly apiError = signal<ExtractedError | null>(null);
+  protected readonly estadoFiltro = signal('');
   protected readonly esMedico = computed(() => this.authService.currentRole() === 'MEDICO');
+
   protected readonly formatEstado = formatEstadoSolicitud;
-  protected readonly formatOrigen = formatOrigenAsignacion;
-  protected estadoFiltro = '';
+  protected readonly formatHospitalLabel = formatHospital;
+  protected readonly formatUrgenciaLabel = formatUrgencia;
+  protected readonly formatFecha = formatFechaCorta;
 
   ngOnInit(): void {
+    this.cargarSolicitudes();
+  }
+
+  seleccionarFiltro(estado: string): void {
+    if (this.estadoFiltro() === estado) return;
+    this.estadoFiltro.set(estado);
     this.cargarSolicitudes();
   }
 
@@ -157,7 +320,8 @@ export class EmergenciasListComponent implements OnInit {
     this.loading.set(true);
     this.apiError.set(null);
 
-    this.emergenciasService.listarSolicitudes(this.estadoFiltro || undefined).subscribe({
+    const filtro = this.estadoFiltro() || undefined;
+    this.emergenciasService.listarSolicitudes(filtro).subscribe({
       next: (list) => {
         this.loading.set(false);
         this.solicitudes.set(list);
@@ -167,6 +331,28 @@ export class EmergenciasListComponent implements OnInit {
         this.apiError.set(extractApiError(err));
       },
     });
+  }
+
+  verDetalle(solicitudId: string): void {
+    void this.router.navigate(['/emergencias', solicitudId]);
+  }
+
+  formatAsignacion(sol: EmergenciaMatchingResponseDTO): string {
+    if (sol.bancoAsignado) {
+      const nombreCorto = formatHospital(sol.bancoAsignado.bancoId);
+      return nombreCorto !== sol.bancoAsignado.bancoId ? nombreCorto : sol.bancoAsignado.nombre;
+    }
+    if (sol.estadoSolicitud === 'En Espera de Donantes' || sol.origenAsignacion === 'NINGUNO') {
+      return 'Buscando en red';
+    }
+    return formatOrigenAsignacion(sol.origenAsignacion);
+  }
+
+  formatErrorText(err: ExtractedError): string {
+    const raw = (err.mensaje || err.detalle || '').trim();
+    if (!raw) return 'No pudimos cargar las emergencias. Intenta nuevamente.';
+    const cap = raw.charAt(0).toUpperCase() + raw.slice(1);
+    return /[.!?]$/.test(cap) ? cap : `${cap}.`;
   }
 
   toneForEstado(estado: EstadoSolicitud): IndicatorTone {

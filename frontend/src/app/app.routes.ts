@@ -5,13 +5,18 @@ import { PublicLayoutComponent } from './layout/public-layout/public-layout.comp
 import { WorkspaceLayoutComponent } from './layout/workspace-layout/workspace-layout.component';
 
 export const routes: Routes = [
-  // Ruta enfocada sin navbar del Home para el registro rápido de donantes (CP-05)
+  // Rutas enfocadas sin navbar del Home
   {
     path: 'donantes/registro',
     loadComponent: () =>
       import('./features/donantes/registro-donante.component').then(
         (m) => m.RegistroDonanteComponent
       ),
+  },
+  {
+    path: 'login',
+    loadComponent: () =>
+      import('./features/auth/login.component').then((m) => m.LoginComponent),
   },
 
   // A. Rutas Públicas (dentro de PublicLayout)
@@ -24,11 +29,6 @@ export const routes: Routes = [
         pathMatch: 'full',
         loadComponent: () =>
           import('./features/home/home.component').then((m) => m.HomeComponent),
-      },
-      {
-        path: 'login',
-        loadComponent: () =>
-          import('./features/auth/login.component').then((m) => m.LoginComponent),
       },
       {
         path: 'interoperabilidad',

@@ -63,17 +63,19 @@ const CORREO_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
   },
   template: `
     <div class="donor-page">
-      <header class="donor-topbar">
+      <header class="donor-topbar" [class.topbar-centered]="paso() === 'CONFIRMADO'">
         <a href="/" class="donor-brand" (click)="intentarSalir($event)">
           <span class="brand-dot" aria-hidden="true"></span>
           <span>BloodLink</span>
         </a>
-        <a href="/" class="back-link" (click)="intentarSalir($event)">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M15 18L9 12L15 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-          <span>Volver</span>
-        </a>
+        @if (paso() !== 'CONFIRMADO') {
+          <a href="/" class="back-link" (click)="intentarSalir($event)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M15 18L9 12L15 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span>Volver</span>
+          </a>
+        }
       </header>
 
       <main class="donor-card">
@@ -392,35 +394,34 @@ const CORREO_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
         @if (paso() === 'CONFIRMADO' && donanteRegistrado(); as don) {
           <section class="step-fade success-box">
             <div class="success-icon" aria-hidden="true">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-                <path d="M5 13L9.5 17.5L19 7" stroke="#2A8191" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" />
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+                <path d="M5 13L9.5 17.5L19 7" stroke="#2A8191" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
             </div>
 
             <h1 class="step-title">Registro Exitoso</h1>
-            <p class="step-sub">
-              Gracias, <strong>{{ don.nombreCompleto }}</strong>. Ya formas parte de la red de
-              donantes voluntarios.
+            <p class="step-sub success-sub">
+              Gracias, <strong>{{ formatearNombre(don.nombreCompleto) }}</strong>. Ya eres parte de la red de donantes.
             </p>
 
-            <dl class="summary-card tabular">
-              <div>
-                <dt>Código de donante</dt>
-                <dd class="code-mono">{{ don.donanteId }}</dd>
+            <dl class="success-strip tabular">
+              <div class="strip-col">
+                <dt class="strip-label">Código de donante</dt>
+                <dd class="strip-code">{{ don.donanteId }}</dd>
               </div>
-              <div>
-                <dt>Grupo sanguíneo</dt>
-                <dd>{{ don.tipoSangre }}{{ don.factorRh }}</dd>
-              </div>
-              <div>
-                <dt>Tiempo de registro</dt>
-                <dd>Completado en {{ segundosTranscurridos() }} segundos</dd>
+              <div class="strip-col strip-col-divider">
+                <dt class="strip-label">Grupo sanguíneo</dt>
+                <dd class="strip-blood">{{ don.tipoSangre }}{{ don.factorRh }}</dd>
               </div>
             </dl>
 
-            <a routerLink="/" class="btn btn-secondary btn-full">
+            <a routerLink="/" class="btn btn-full success-cta">
               Volver al inicio
             </a>
+
+            <p class="success-elapsed tabular">
+              Completado en {{ tiempoRegistroTexto() }}
+            </p>
           </section>
         }
       </main>
@@ -442,6 +443,7 @@ const CORREO_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
       display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;
     }
     .donor-topbar { width: 100%; max-width: 600px; display: flex; align-items: center; justify-content: space-between; padding: 0 0.25rem; }
+    .donor-topbar.topbar-centered { justify-content: center; }
     .donor-brand { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 1.2rem; font-weight: 900; }
     .brand-dot {
       width: 12px; height: 12px; border-radius: 50%;
@@ -488,15 +490,10 @@ const CORREO_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
     .custom-check input[type="checkbox"] { width: 22px; height: 22px; margin-top: 0; border-radius: 6px; accent-color: var(--brand-turquoise-dark); }
     .success-box { align-items: center; text-align: center; }
     .success-icon {
-      width: 58px; height: 58px; border-radius: 50%; background-color: var(--brand-turquoise-soft);
+      width: 68px; height: 68px; border-radius: 50%; background-color: var(--brand-turquoise-soft);
       display: inline-flex; align-items: center; justify-content: center;
+      animation: successScaleIn 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
     }
-    .summary-card {
-      width: 100%; padding: 1.25rem; background-color: var(--bg-canvas); border-radius: 20px;
-      border: 1px solid var(--border-subtle); display: grid; gap: 0.85rem; text-align: left;
-    }
-    .summary-card dt { font-size: 0.78rem; font-weight: 700; color: var(--text-muted); }
-    .summary-card dd { font-size: 1rem; font-weight: 800; }
     @media (max-width: 560px) {
       .donor-card { padding: 1.5rem; }
       .blood-row, .two-fields { grid-template-columns: 1fr; }
@@ -546,6 +543,18 @@ export class RegistroDonanteComponent {
       this.paso() === 'DATOS_CONTACTO' ||
       (this.paso() === 'IDENTIDAD' && this.dniSignal().trim().length > 0),
   );
+
+  protected readonly tiempoRegistroTexto = computed(() => {
+    const s = this.segundosTranscurridos();
+    return s === 1 ? '1 segundo' : `${s} segundos`;
+  });
+
+  formatearNombre(nombre: string): string {
+    return (nombre || '')
+      .trim()
+      .toLowerCase()
+      .replace(/(?:^|\s)\S/g, (letra) => letra.toUpperCase());
+  }
 
   protected tipoSangre: TipoSangre = 'O';
   protected factorRh: FactorRh = '+';

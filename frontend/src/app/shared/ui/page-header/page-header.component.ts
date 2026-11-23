@@ -24,15 +24,15 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
     .page-header {
       display: flex;
       flex-wrap: wrap;
-      align-items: flex-end;
+      align-items: center;
       justify-content: space-between;
       gap: 1.25rem;
-      margin-bottom: 2rem;
+      margin-bottom: 1.5rem;
     }
     .header-copy {
       display: flex;
       flex-direction: column;
-      gap: 0.4rem;
+      gap: 0.35rem;
       max-width: 720px;
     }
     .page-title {
